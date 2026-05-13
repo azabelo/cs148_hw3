@@ -11,6 +11,7 @@ import math
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class ProjectionHeads(nn.Module):
@@ -31,13 +32,15 @@ class ProjectionHeads(nn.Module):
 
     def __init__(self, d_image: int, d_text: int, d_proj: int = 256) -> None:
         super().__init__()
-        # TODO: define self.image_proj, self.text_proj as nn.Linear(..., bias=False).
-        raise NotImplementedError
+        self.image_proj = nn.Linear(d_image, d_proj, bias=False)
+        self.text_proj = nn.Linear(d_text, d_proj, bias=False)
 
     def forward(
         self, image_embeds: torch.Tensor, text_embeds: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        raise NotImplementedError
+        z_i = self.image_proj(image_embeds)
+        z_t = self.text_proj(text_embeds)
+        return F.normalize(z_i, p=2, dim=-1), F.normalize(z_t, p=2, dim=-1)
 
 
 def init_logit_scale() -> nn.Parameter:

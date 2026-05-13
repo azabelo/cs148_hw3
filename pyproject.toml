@@ -5,9 +5,14 @@ description = "EE/CS 148B HW3 — Vision-Language Models"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
 dependencies = [
-    "torch>=2.4.0,<2.11.0",
-    "torchvision>=0.19.0,<0.26.0",
-    "numpy>=1.26.0",
+    # PyTorch 2.4+ has no macOS Intel (x86_64) wheels; keep 2.2.x there.
+    'torch>=2.4.0,<2.11.0; sys_platform != "darwin" or platform_machine != "x86_64"',
+    'torch>=2.2.0,<2.3.0; sys_platform == "darwin" and platform_machine == "x86_64"',
+    'torchvision>=0.19.0,<0.26.0; sys_platform != "darwin" or platform_machine != "x86_64"',
+    'torchvision>=0.17.0,<0.18.0; sys_platform == "darwin" and platform_machine == "x86_64"',
+    # NumPy 2.x wheels break PyTorch 2.2.x (Intel mac path above).
+    'numpy>=1.26.0,<2.0.0; sys_platform == "darwin" and platform_machine == "x86_64"',
+    'numpy>=1.26.0; sys_platform != "darwin" or platform_machine != "x86_64"',
     "transformers>=4.45.0",
     "datasets>=2.20.0",
     "sentence-transformers>=3.0.0",

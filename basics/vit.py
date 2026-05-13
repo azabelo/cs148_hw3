@@ -8,6 +8,8 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
+from basics.model import Block
+
 
 class PatchEmbeddings(nn.Module):
     """Split an image into non-overlapping patches and project each to d_model.
@@ -32,14 +34,25 @@ class PatchEmbeddings(nn.Module):
         self.img_size = img_size
         self.patch_size = patch_size
         self.num_patches = (img_size // patch_size) ** 2
-        # TODO: implement.
-        # Hint: use nn.Conv2d with kernel_size=patch_size, stride=patch_size,
-        # in_channels=3, out_channels=d_model. Then flatten the spatial dims
-        # and transpose so each patch is a token.
-        raise NotImplementedError
+        self.proj = nn.Conv2d(
+            in_channels=3,
+            out_channels=d_model,
+            kernel_size=patch_size,
+            stride=patch_size,
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError
+        """Patchify and linearly project each patch.
+
+        Args:
+            x: (B, 3, img_size, img_size) float tensor.
+
+        Returns:
+            (B, num_patches, d_model) float tensor.
+        """
+        x = self.proj(x)
+        # (B, d_model, H/P, W/P) -> (B, num_patches, d_model)
+        return x.flatten(2).transpose(1, 2)
 
 
 class ViT(nn.Module):
@@ -54,8 +67,8 @@ class ViT(nn.Module):
       5. Apply a final LayerNorm.
       6. Return only the [CLS] slice — shape (B, d_model).
 
-    For §5 (VLM), you may want a `return_all_tokens=True` flag that returns the
-    full (B, num_patches+1, d_model) sequence instead. Add it when you get there.
+    With `return_all_tokens=True`, returns the full (B, num_patches+1, d_model)
+    sequence after the final LayerNorm (for §5).
 
     Args:
         img_size, patch_size, d_model, num_heads, num_blocks, dropout
@@ -71,11 +84,47 @@ class ViT(nn.Module):
         dropout: float = 0.1,
     ) -> None:
         super().__init__()
-        # TODO: implement.
-        # Hint: store self.cls_token as nn.Parameter(torch.zeros(1, 1, d_model))
-        # and self.pos_embed as nn.Parameter(torch.zeros(1, num_patches+1, d_model)).
-        # Use basics.model.Block(..., is_decoder=False) for the encoder blocks.
-        raise NotImplementedError
+        assert img_size % patch_size == 0, "img_size must be divisible by patch_size"
+        self.d_model = d_model
+        self.num_patches = (img_size // patch_size) ** 2
+        seq_len = self.num_patches + 1
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError
+        self.patch_embed = PatchEmbeddings(img_size, patch_size, d_model)
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, d_model))
+        self.pos_embed = nn.Parameter(torch.zeros(1, seq_len, d_model))
+        self.blocks = nn.ModuleList(
+            [
+                Block(
+                    d_model=d_model,
+                    num_heads=num_heads,
+                    block_size=seq_len,
+                    is_decoder=False,
+                    dropout=dropout,
+                )
+                for _ in range(num_blocks)
+            ]
+        )
+        self.ln_f = nn.LayerNorm(d_model)
+
+    def forward(self, x: torch.Tensor, return_all_tokens: bool = False) -> torch.Tensor:
+        """Encode an image with the Vision Transformer.
+
+        Args:
+            x: (B, 3, img_size, img_size) float tensor.
+            return_all_tokens: If True, return the full token sequence.
+
+        Returns:
+            By default, (B, d_model): the CLS embedding after the final LayerNorm.
+            If return_all_tokens=True, (B, num_patches + 1, d_model).
+        """
+        B = x.shape[0]
+        patches = self.patch_embed(x)
+        cls = self.cls_token.expand(B, -1, -1)
+        x = torch.cat([cls, patches], dim=1)
+        x = x + self.pos_embed
+        for block in self.blocks:
+            x = block(x)
+        x = self.ln_f(x)
+        if return_all_tokens:
+            return x
+        return x[:, 0]
