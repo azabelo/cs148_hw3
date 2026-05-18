@@ -9,6 +9,11 @@ import torch
 import torch.nn as nn
 
 
+def _freeze_module(module: nn.Module) -> None:
+    for p in module.parameters():
+        p.requires_grad = False
+
+
 class LoRALinear(nn.Module):
     """Low-rank adapter wrapping an existing nn.Linear layer.
 
@@ -34,15 +39,18 @@ class LoRALinear(nn.Module):
         self.alpha = alpha
         self.scaling = alpha / rank
         self.base_layer = base_layer
+        _freeze_module(self.base_layer)
 
-        # TODO: freeze base_layer's parameters.
-        # TODO: create self.A (nn.Parameter, shape (rank, d_in), kaiming-uniform init).
-        # TODO: create self.B (nn.Parameter, shape (d_out, rank), zero init).
-        raise NotImplementedError
+        d_in = base_layer.in_features
+        d_out = base_layer.out_features
+        self.A = nn.Parameter(torch.empty(rank, d_in))
+        self.B = nn.Parameter(torch.empty(d_out, rank))
+        nn.init.kaiming_uniform_(self.A, a=5**0.5)
+        nn.init.zeros_(self.B)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # TODO: return base_layer(x) + scaling * (x @ A.T @ B.T)
-        raise NotImplementedError
+        # base_layer(x) == x @ W^T (+ bias); LoRA delta: (alpha/rank) * x @ A^T @ B^T
+        return self.base_layer(x) + self.scaling * (x @ self.A.T @ self.B.T)
 
 
 def apply_lora_to_attention(model: nn.Module, rank: int, alpha: float) -> nn.Module:
@@ -61,7 +69,15 @@ def apply_lora_to_attention(model: nn.Module, rank: int, alpha: float) -> nn.Mod
                (e.g., a ViT).
         rank, alpha: Forwarded to LoRALinear.
     """
-    # TODO: implement.
-    # Hint: iterate model.named_modules(), check isinstance(m, Head), and
-    # set m.q_proj = LoRALinear(m.q_proj, rank, alpha) (and same for v_proj).
-    raise NotImplementedError
+    from basics.model import Head
+
+    for module in model.modules():
+        if isinstance(module, Head):
+            module.q_proj = LoRALinear(module.q_proj, rank, alpha)
+            module.v_proj = LoRALinear(module.v_proj, rank, alpha)
+
+    # Train only LoRA matrices; keep the rest of the backbone frozen (§4.2).
+    for name, param in model.named_parameters():
+        param.requires_grad = name.endswith(("A", "B"))
+
+    return model

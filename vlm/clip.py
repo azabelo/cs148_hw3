@@ -43,9 +43,18 @@ class ProjectionHeads(nn.Module):
         return F.normalize(z_i, p=2, dim=-1), F.normalize(z_t, p=2, dim=-1)
 
 
-def init_logit_scale() -> nn.Parameter:
-    """CLIP-style learnable temperature, initialized to ln(1/0.07)."""
-    return nn.Parameter(torch.tensor(math.log(1.0 / 0.07)))
+def init_logit_scale(
+    device: torch.device | None = None,
+    dtype: torch.dtype = torch.float32,
+) -> nn.Parameter:
+    """CLIP-style learnable temperature, initialized to ln(1/0.07).
+
+    Pass ``device`` so the parameter is created on that device directly.
+    Using ``nn.Parameter(...).to(device)`` can yield a non-leaf tensor and
+    break optimizers (AdamW raises "can't optimize a non-leaf Tensor").
+    """
+    t = torch.tensor(math.log(1.0 / 0.07), dtype=dtype, device=device)
+    return nn.Parameter(t)
 
 
 def clip_loss(
@@ -73,5 +82,11 @@ def clip_loss(
     Returns:
         Scalar loss tensor.
     """
-    # TODO: implement.
-    raise NotImplementedError
+    scale = logit_scale.exp()
+    logits_per_image = scale * (image_embeds @ text_embeds.T)
+    logits_per_text = logits_per_image.T
+    b = image_embeds.shape[0]
+    labels = torch.arange(b, device=image_embeds.device, dtype=torch.long)
+    loss_i = F.cross_entropy(logits_per_image, labels)
+    loss_t = F.cross_entropy(logits_per_text, labels)
+    return 0.5 * (loss_i + loss_t)

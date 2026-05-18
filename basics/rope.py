@@ -37,21 +37,38 @@ class RoPE1D(nn.Module):
         self.max_seq_len = max_seq_len
         self.base = base
 
-        # TODO: precompute cos and sin tables of shape (max_seq_len, head_dim // 2)
-        # and register them as non-persistent buffers.
-        # Hint:
-        #   inv_freq = base ** (-torch.arange(0, head_dim, 2).float() / head_dim)
-        #   t = torch.arange(max_seq_len).float()
-        #   freqs = torch.outer(t, inv_freq)              # (max_seq_len, head_dim // 2)
-        #   self.register_buffer("cos_cached", freqs.cos(), persistent=False)
-        #   self.register_buffer("sin_cached", freqs.sin(), persistent=False)
-        raise NotImplementedError
+        inv_freq = base ** (-torch.arange(0, head_dim, 2).float() / head_dim)
+        t = torch.arange(max_seq_len).float()
+        freqs = torch.outer(t, inv_freq)
+        self.register_buffer("cos_cached", freqs.cos(), persistent=False)
+        self.register_buffer("sin_cached", freqs.sin(), persistent=False)
 
     def forward(self, x: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
-        # TODO: implement.
-        # Hint: split x into even and odd indices along head_dim, look up
-        # cos/sin for the given positions, and apply the 2D rotation.
-        raise NotImplementedError
+        """Apply RoPE along the last dimension for each token position.
+
+        Args:
+            x: (B, num_heads, T, head_dim).
+            positions: (T,) integer positions.
+
+        Returns:
+            (B, num_heads, T, head_dim): x with RoPE applied.
+        """
+        if positions.ndim != 1:
+            raise ValueError("positions must be 1D of shape (T,)")
+        t = x.shape[2]
+        if positions.shape[0] != t:
+            raise ValueError("positions must have length T matching x.shape[2]")
+
+        cos = self.cos_cached[positions.to(self.cos_cached.device)].to(dtype=x.dtype)
+        sin = self.sin_cached[positions.to(self.sin_cached.device)].to(dtype=x.dtype)
+        cos = cos.view(1, 1, t, -1)
+        sin = sin.view(1, 1, t, -1)
+
+        x0 = x[..., 0::2]
+        x1 = x[..., 1::2]
+        y0 = x0 * cos - x1 * sin
+        y1 = x0 * sin + x1 * cos
+        return torch.stack((y0, y1), dim=-1).reshape_as(x)
 
 
 class RoPE2D(nn.Module):

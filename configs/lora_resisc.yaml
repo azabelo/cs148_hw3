@@ -1,5 +1,8 @@
 # §4 — RESISC45 fine-tuning. Used for full FT, LoRA, and linear probe runs.
 # `--method` is set on the command line; this config provides shared settings.
+#
+# LoRA rank sweep (HW): use scripts/finetune_resisc.py --lora-rank-sweep --method lora
+# with α = 2r (default --lora-alpha-per-rank 2). train.num_epochs is 10 per rank.
 
 num_classes: 45
 

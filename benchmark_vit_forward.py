@@ -6,8 +6,13 @@ for patch sizes P ∈ {8, 16, 32}, with d_model=384, num_heads=6, num_blocks=6.
 Uses CUDA synchronization around the timed region; 5 warmup steps, 20 timed
 steps; reports mean and sample standard deviation per P.
 
-Run from the repo root:
-    uv run python benchmark_vit_forward.py
+Run from the repo root (login node has no GPU; use your interactive GPU job):
+
+    srun --jobid=<JOBID> --overlap bash -lc \
+      'export PYTHONUNBUFFERED=1; cd /path/to/this/repo && .venv/bin/python -u benchmark_vit_forward.py'
+
+After the environment exists, `.venv/bin/python` avoids a long `uv run` sync on shared
+filesystems. First-time setup: `uv sync` from the repo root, then the command above.
 """
 
 from __future__ import annotations
@@ -67,10 +72,12 @@ def main() -> None:
         sys.exit(1)
 
     device = torch.device("cuda")
+    dev_name = torch.cuda.get_device_name(device)
     print(
-        f"ViT forward benchmark | device={device} | batch={BATCH} | "
+        f"ViT forward benchmark | device={device} ({dev_name}) | batch={BATCH} | "
         f"img_size={IMG_SIZE} | d_model={D_MODEL} | num_heads={NUM_HEADS} | "
-        f"num_blocks={NUM_BLOCKS} | dropout={DROPOUT} | warmup={WARMUP} | steps={STEPS}\n"
+        f"num_blocks={NUM_BLOCKS} | dropout={DROPOUT} | warmup={WARMUP} | steps={STEPS}\n",
+        flush=True,
     )
 
     rows: list[tuple[int, float, float, int]] = []

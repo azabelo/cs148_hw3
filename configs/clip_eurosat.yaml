@@ -29,6 +29,9 @@ train:
   log_every: 50
   eval_every_epoch: 1
 
+# EuroSAT is loaded as a single `train` split and partitioned in code with a
+# stratified 80/10/10 train/val/test split (see `vlm.data.build_eurosat_loaders`).
+# The slice strings below mirror that ratio for documentation only.
 split:
   train: "train[:80%]"
   val: "train[80%:90%]"
